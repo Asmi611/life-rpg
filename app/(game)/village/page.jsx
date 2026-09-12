@@ -437,6 +437,9 @@ export default function Village() {
   const [addQuestOpen, setAddQuestOpen] = useState(false);
 const [quests, setQuests] = useState(mockQuests);
   const pct = Math.min(100, Math.round((c.totalXP / c.xpForNextLevel) * 100));
+  const tier = Math.min(Math.max(c.villageTier, 1), 3);
+  const hotspots = HOTSPOTS_BY_TIER[tier];
+  const villageImage = VILLAGE_IMAGES[tier];
 
   // ESC closes the profile overlay.
   useEffect(() => {
@@ -542,13 +545,13 @@ const [quests, setQuests] = useState(mockQuests);
       <div className="relative w-full overflow-x-hidden pt-24 md:pt-20">
         <div className="relative mx-auto aspect-[1376/768] w-full max-w-none px-0 sm:px-2">
           <Image
-            src="/art/village-tier-1.webp"
-            alt="Village at dusk with five buildings: Academy, Library, Training Ground, Farm, and Workshop"
+            src={villageImage.src}
+            alt={villageImage.alt}
             fill
             className="object-cover"
             priority
           />
-          {HOTSPOTS.map((spot) => (
+          {hotspots.map((spot) => (
             <Hotspot key={spot.name} spot={spot} />
           ))}
         </div>
@@ -572,14 +575,37 @@ const [quests, setQuests] = useState(mockQuests);
     </main>
   );
 }
-const HOTSPOTS = [
-  { key: "library", name: "Academy", category: "Intelligence", top: 15, left: 10 },
-  { key: "library", name: "Library", category: "Intelligence", top: 10, left: 55 },
-  { key: "gym", name: "Training Ground", category: "Strength", top: 30, left: 75 },
-  { key: "home", name: "Farm", category: "Discipline", top: 65, left: 15 },
-  { key: "home", name: "Workshop", category: "Discipline", top: 65, left: 60 },
-  { key: "shop", name: "Shop", category: null, top: 42, left: 62 },
-];
+const HOTSPOTS_BY_TIER = {
+  1: [
+    { key: "library", name: "Academy", category: "Intelligence", top: 15, left: 10 },
+    { key: "library", name: "Library", category: "Intelligence", top: 10, left: 55 },
+    { key: "gym", name: "Training Ground", category: "Strength", top: 30, left: 75 },
+    { key: "home", name: "Farm", category: "Discipline", top: 65, left: 15 },
+    { key: "home", name: "Workshop", category: "Discipline", top: 65, left: 60 },
+    { key: "shop", name: "Shop", category: null, top: 42, left: 62 },
+  ],
+  2: [
+    { key: "library", name: "Academy", category: "Intelligence", top: 15, left: 15 },
+    { key: "library", name: "Library", category: "Intelligence", top: 12, left: 55 },
+    { key: "gym", name: "Training Ground", category: "Strength", top: 30, left: 78 },
+    { key: "home", name: "Farm", category: "Discipline", top: 65, left: 15 },
+    { key: "home", name: "Workshop", category: "Discipline", top: 62, left: 58 },
+    { key: "shop", name: "Shop", category: null, top: 40, left: 62 },
+  ],
+  3: [
+    { key: "library", name: "Academy", category: "Intelligence", top: 15, left: 22 },
+    { key: "library", name: "Library", category: "Intelligence", top: 40, left: 78 },
+    { key: "gym", name: "Training Ground", category: "Strength", top: 12, left: 78 },
+    { key: "home", name: "Farm", category: "Discipline", top: 60, left: 12 },
+    { key: "home", name: "Workshop", category: "Discipline", top: 68, left: 82 },
+    { key: "shop", name: "Shop", category: null, top: 42, left: 62 },
+  ],
+};
+const VILLAGE_IMAGES = {
+  1: { src: "/art/village-tier-1.webp", alt: "Hamlet village with six buildings at dusk" },
+  2: { src: "/art/village-tier-2.webp", alt: "Upgraded village with decorated buildings at dusk" },
+  3: { src: "/art/village-tier-3.webp", alt: "Walled town with expanded buildings and marketplace" },
+};
 
 function Hotspot({ spot }) {
   const router = useRouter();
