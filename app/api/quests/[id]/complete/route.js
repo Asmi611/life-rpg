@@ -48,7 +48,7 @@ export async function POST(request, { params }) {
     );
   }
 
-  const questId = params.id;
+  const { id: questId } = await params;
 
   // 2) Use the ADMIN client for all DB operations (service-role bypasses RLS).
   const admin = createAdminClient();
