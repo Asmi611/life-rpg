@@ -33,6 +33,9 @@
   --radius-card: 12px;
   --radius-pill: 24px;
   --radius-avatar: 999px;
+
+  --font-display: var(--font-display);
+--font-body: var(--font-body);
 }
 
 body {
