@@ -452,7 +452,7 @@ const [quests, setQuests] = useState(mockQuests);
   }, [profileOpen]);
 
   return (
-    <main className="min-h-dvh bg-parchment">
+    <main id="main-content" className="min-h-dvh bg-parchment">
       {/* Pixel HUD bar — fixed to the top; the portrait itself opens the profile */}
       <header className="fixed inset-x-0 top-0 z-10 border-b-2 border-coin-gold bg-black">
         <div className="mx-auto flex max-w-5xl flex-col gap-2 px-2 py-2 pt-1 md:flex-row md:items-center md:gap-3 md:px-4">

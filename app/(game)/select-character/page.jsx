@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // Style exception: this screen intentionally uses the retro pixel-art look from
 // docs/references/ (dark background, amber/gold frame, bright panel blue) — an
@@ -28,6 +28,9 @@ export default function SelectCharacter() {
   const [name, setName] = useState("");
   const [confirmed, setConfirmed] = useState(null); // { name, className } on PROCEED
   const [showModal, setShowModal] = useState(false);
+  const modalRef = useRef(null);
+  const proceedButtonRef = useRef(null);
+  const startJourneyButtonRef = useRef(null);
 
   const character = CHARACTERS[characterIndex];
   const otherCharacter = CHARACTERS[(characterIndex + 1) % CHARACTERS.length];
@@ -62,16 +65,45 @@ export default function SelectCharacter() {
   }
 
   useEffect(() => {
-    if (!showModal) return;
+    if (!showModal) return undefined;
+
+    // Move focus into the modal as soon as it opens.
+    proceedButtonRef.current?.focus();
+
     function onKeyDown(event) {
-      if (event.key === "Escape") setShowModal(false);
+      if (event.key === "Escape") {
+        setShowModal(false);
+        return;
+      }
+      if (event.key !== "Tab" || !modalRef.current) return;
+
+      // Trap Tab/Shift+Tab within the modal's focusable elements.
+      const focusables = modalRef.current.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
+
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      // Return focus to the trigger button once the modal closes.
+      startJourneyButtonRef.current?.focus();
+    };
   }, [showModal]);
 
   return (
-    <main className="relative flex min-h-dvh flex-col items-center gap-3 overflow-hidden bg-black px-4 pt-6 text-white font-pixel">
+    <main id="main-content" className="relative flex min-h-dvh flex-col items-center gap-3 overflow-hidden bg-black px-4 pt-6 text-white font-pixel">
       {/* Faded neighbor portraits in the background, like the reference art */}
       <Image
         src={otherCharacter.portrait}
@@ -178,6 +210,7 @@ export default function SelectCharacter() {
       </div>
 
       <button
+        ref={startJourneyButtonRef}
         type="button"
         onClick={openModal}
         disabled={!hasName}
@@ -201,6 +234,7 @@ export default function SelectCharacter() {
 
       {showModal && (
         <div
+          ref={modalRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby="quest-log-title"
@@ -255,6 +289,7 @@ export default function SelectCharacter() {
 
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                 <button
+                  ref={proceedButtonRef}
                   type="button"
                   onClick={handleProceed}
                   className="flex-1 rounded-pill border-2 border-coin-gold bg-xp-amber px-6 py-3 text-sm text-dusk transition hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-parchment active:scale-95"

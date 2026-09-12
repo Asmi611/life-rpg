@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 import { mockQuests } from "@/lib/client/mockData";
 
+
 // Retro pixel quest screen — same intentional style exception (dark bg, gold pixel
 // frame, violet inner accents per the reference art). Mock data only, no API yet.
 const SHARED_BUTTON =
@@ -35,7 +36,7 @@ export default function ActiveQuest() {
 
   if (!quest) {
     return (
-      <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-black px-4 font-pixel text-parchment">
+      <main  id="main-content" className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-black px-4 font-pixel text-parchment">
         <div className="w-full max-w-96 rounded-card border-4 border-coin-gold bg-black p-6 text-center">
           <h1 className="text-lg text-xp-amber">QUEST NOT FOUND</h1>
           <p className="mt-2 text-xs text-parchment/70">

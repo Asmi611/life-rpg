@@ -5,7 +5,7 @@ import Image from "next/image";
 // frames) per the character-select direction; token colors only (xp-amber/coin-gold).
 export default function Home() {
   return (
-    <main className="relative flex min-h-dvh flex-col items-center overflow-hidden bg-black px-4 pb-4 pt-8 font-pixel text-parchment sm:pt-12">
+    <main id="main-content" className="relative flex min-h-dvh flex-col items-center overflow-hidden bg-black px-4 pb-4 pt-8 font-pixel text-parchment sm:pt-12">
       <h1 className="text-center text-2xl leading-tight text-xp-amber [text-shadow:3px_3px_0_#7a4a12] sm:text-2xl">
         LIFE&nbsp;RPG
       </h1>

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { mockCharacter, mockShopItems } from "@/lib/client/mockData";
 
 // Retro pixel shop — same intentional style exception as the other game screens
@@ -11,8 +11,17 @@ import { mockCharacter, mockShopItems } from "@/lib/client/mockData";
 
 // Icon paths follow the convention /art/item-[slug].png; the team's art lives at
 // public/art/ root (e.g. item-golden-cape.png).
-const iconFor = (name) =>
-  `/art/item-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}.png`;
+const ICON_FILES = {
+  "Golden Cape": "item-golden-cape.png",
+  "Garden Fence": "item-garden-fence.png",
+  "Straw Hat": "item-straw-hat.png",
+  "Crystal Lantern": "item-crystal-lantern.png",
+  "Scholar's Spectacles": "item-spectacles.png",
+  "Wanderer's Boots": "item-boots.png",
+  "Stone Well": "item-stone-well.png",
+  "Wind Chimes": "item-wind-chimes.png",
+};
+const iconFor = (name) => `/art/${ICON_FILES[name] ?? "item-golden-cape.png"}`;
 
 // One flavor line per item, written for the mock catalog; keyed by item id so a
 // renamed item keeps its text. Tone matches the reference inspection modals.
@@ -63,6 +72,9 @@ function StatusBadge({ owned, equipped }) {
 
 export default function Shop() {
   const [selected, setSelected] = useState(null);
+  const modalRef = useRef(null);
+  const closeButtonRef = useRef(null);
+  const lastTriggerRef = useRef(null);
 
   // Lock page scroll while the inspection modal is open.
   useEffect(() => {
@@ -75,16 +87,44 @@ export default function Shop() {
   }, [selected]);
 
   useEffect(() => {
-    if (!selected) return;
+    if (!selected) return undefined;
+
+    // Move focus into the modal as soon as it opens.
+    closeButtonRef.current?.focus();
+
     function onKeyDown(e) {
-      if (e.key === "Escape") setSelected(null);
+      if (e.key === "Escape") {
+        setSelected(null);
+        return;
+      }
+      if (e.key !== "Tab" || !modalRef.current) return;
+
+      // Trap Tab/Shift+Tab within the modal's focusable elements.
+      const focusables = modalRef.current.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      // Return focus to whichever card opened the modal.
+      lastTriggerRef.current?.focus();
+    };
   }, [selected]);
 
   return (
-    <main className="flex min-h-dvh flex-col items-center gap-3 overflow-hidden bg-black px-4 py-6 font-pixel text-parchment">
+    <main id="main-content" className="flex min-h-dvh flex-col items-center gap-3 overflow-hidden bg-black px-4 py-6 font-pixel text-parchment">
       {/* Header row */}
       <div className="z-10 flex w-full max-w-140 items-start justify-between gap-3">
         <div className="min-w-0">
@@ -122,7 +162,10 @@ export default function Shop() {
           <li key={item.id}>
             <button
               type="button"
-              onClick={() => setSelected(item)}
+              onClick={(e) => {
+                lastTriggerRef.current = e.currentTarget;
+                setSelected(item);
+              }}
               aria-label={`View ${item.name} — ${
                 item.costGems > 0 ? `${item.costGems} gems` : `${item.costCoins} coins`
               }, ${item.equipped ? "equipped" : item.owned ? "owned" : "not owned"}`}
@@ -166,6 +209,7 @@ export default function Shop() {
       {/* Item inspection modal */}
       {selected && (
         <div
+          ref={modalRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby="item-inspection-title"
@@ -244,6 +288,7 @@ export default function Shop() {
                   </button>
                 )}
                 <button
+                  ref={closeButtonRef}
                   type="button"
                   onClick={() => setSelected(null)}
                   className="min-h-11 flex-1 rounded-card border-2 border-coin-gold bg-black px-6 py-3 text-xs uppercase tracking-wider text-xp-amber transition hover:bg-dusk focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-coin-gold active:scale-95"
