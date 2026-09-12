@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/server/supabaseServer";
+import {
+  createClient,
+  getAuthenticatedUser,
+} from "@/lib/server/supabaseServer";
 import { createAdminClient } from "@/lib/server/supabaseAdmin";
 import { getLevelForTotalXp } from "@/lib/server/xpCurve";
 import { getVillageTier } from "@/lib/server/villageTier";
@@ -9,22 +12,25 @@ import { getVillageTier } from "@/lib/server/villageTier";
 // ============================================================
 // Returns the logged-in user's character with computed fields.
 // 401 if no session, 404 if no character yet.
+//
+// Authentication: tries the cookie session first (real browser logins),
+// then falls back to an "Authorization: Bearer <token>" header for direct
+// API testing with tools like Postman / Thunder Client.
 // ============================================================
 
-export async function GET() {
-  const supabase = await createClient();
+export async function GET(request) {
+  const { user, error: authError, supabase } = await getAuthenticatedUser(request);
 
-  // Verify the user is logged in
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (authError || !user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  if (authError || !user || !supabase) {
+    return NextResponse.json(
+      { error: authError ? authError.message : "Not authenticated" },
+      { status: 401 }
+    );
   }
 
-  // RLS-scoped query — the session client can only see this user's rows
+  // RLS-scoped query — the returned client is scoped to this user either
+  // via cookies (browser session) or via the Bearer token Authorization
+  // header (direct API testing).
   const { data: character, error } = await supabase
     .from("Character")
     .select("*")
@@ -63,19 +69,20 @@ export async function GET() {
 // Creates a new character for the logged-in user, plus starter
 // quests and buildings. Idempotent — returns 409 if one already
 // exists.
+//
+// Authentication: tries the cookie session first (real browser logins),
+// then falls back to an "Authorization: Bearer <token>" header for direct
+// API testing with tools like Postman / Thunder Client.
 // ============================================================
 
 export async function POST(request) {
-  const supabase = await createClient();
-
-  // Verify the user is logged in
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+  const { user, error: authError } = await getAuthenticatedUser(request);
 
   if (authError || !user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      { error: authError ? authError.message : "Not authenticated" },
+      { status: 401 }
+    );
   }
 
   // Parse and validate the request body
