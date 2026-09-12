@@ -35,7 +35,8 @@
   --radius-avatar: 999px;
 
   --font-display: var(--font-display);
---font-body: var(--font-body);
+  --font-body: var(--font-body);
+  --font-pixel: var(--font-pixel);
 }
 
 body {
