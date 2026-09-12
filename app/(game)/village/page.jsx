@@ -256,6 +256,173 @@ function ProfileOverlay({ characterId, charName, onClose }) {
     </div>
   );
 }
+const CATEGORIES = ["Intelligence", "Strength", "Discipline"];
+const EMPTY_FORM = { title: "", description: "", category: "Intelligence" };
+
+function AddQuestModal({ quests, setQuests, onClose }) {
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [editingId, setEditingId] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const customQuests = quests.filter((q) => q.source === "custom");
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.title.trim()) {
+      setError("Title is required");
+      return;
+    }
+    setError("");
+    if (editingId) {
+      setQuests((prev) =>
+        prev.map((q) => (q.id === editingId ? { ...q, ...form, title: form.title.trim() } : q))
+      );
+    } else {
+      setQuests((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          title: form.title.trim(),
+          description: form.description.trim(),
+          category: form.category,
+          source: "custom",
+          status: "available",
+          rewardXP: 0,
+          rewardCoins: 0,
+          rewardGems: 0,
+        },
+        // TODO: swap to real POST /api/quests once backend is live
+      ]);
+    }
+    setForm(EMPTY_FORM);
+    setEditingId(null);
+  }
+
+  function handleEdit(q) {
+    setForm({ title: q.title, description: q.description, category: q.category });
+    setEditingId(q.id);
+    setError("");
+  }
+
+  function handleDelete(q) {
+    if (window.confirm(`Delete "${q.title}"?`)) {
+      setQuests((prev) => prev.filter((x) => x.id !== q.id));
+      // TODO: swap to real DELETE /api/quests/:id once backend is live
+    }
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Add custom quest"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/95 px-2 py-3 sm:px-4 sm:py-5"
+    >
+      <button
+        type="button"
+        aria-label="Close add quest"
+        onClick={onClose}
+        className="fixed right-2 top-2 z-20 flex h-11 w-11 items-center justify-center border-2 border-black bg-rust font-pixel text-sm text-parchment shadow-[0_0_0_2px_rgba(0,0,0,0.6)] transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-parchment active:scale-95"
+      >
+        ✕
+      </button>
+
+      <div className="relative z-10 mx-auto w-full max-w-2xl rounded-card border-4 border-coin-gold bg-black p-4 font-pixel text-parchment shadow-[0_0_24px_rgba(242,184,75,0.3)] sm:p-6">
+        <h2 className="text-sm text-xp-amber">
+          {editingId ? "EDIT QUEST" : "◈ CREATE QUEST ◈"}
+        </h2>
+
+        <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-xs text-coin-gold">
+            Title
+            <input
+              type="text"
+              value={form.title}
+              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              className="min-h-11 rounded-card border-2 border-coin-gold/60 bg-dusk px-3 py-2 text-sm text-parchment"
+            />
+            {error && <span className="text-[10px] text-rust">{error}</span>}
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs text-coin-gold">
+            Description
+            <textarea
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              rows={2}
+              className="rounded-card border-2 border-coin-gold/60 bg-dusk px-3 py-2 text-sm text-parchment"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs text-coin-gold">
+            Category
+            <select
+              value={form.category}
+              onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+              className="min-h-11 rounded-card border-2 border-coin-gold/60 bg-dusk px-3 py-2 text-sm text-parchment"
+            >
+              {CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="submit"
+            className="min-h-11 rounded-card border-2 border-black bg-gradient-to-b from-xp-amber to-coin-gold px-4 py-3 text-xs uppercase text-black transition hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-xp-amber"
+          >
+            {editingId ? "SAVE CHANGES" : "▶ ADD QUEST"}
+          </button>
+        </form>
+
+        <hr className="my-4 border-coin-gold/40" />
+
+        <h3 className="text-xs text-coin-gold">MY QUESTS</h3>
+        <ul className="mt-2 flex flex-col gap-2">
+          {customQuests.length === 0 && (
+            <li className="text-xs text-parchment/50">No custom quests yet.</li>
+          )}
+          {customQuests.map((q) => (
+            <li
+              key={q.id}
+              className="flex items-center justify-between gap-2 rounded-card border border-coin-gold/40 bg-dusk/50 px-3 py-2"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-xs text-parchment">{q.title}</p>
+                <span className="text-[9px] text-gem-violet">◆ {q.category}</span>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  aria-label={`Edit quest: ${q.title}`}
+                  onClick={() => handleEdit(q)}
+                  className="flex h-9 w-9 items-center justify-center rounded-card border-2 border-coin-gold bg-black text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-xp-amber"
+                >
+                  ✎
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete quest: ${q.title}`}
+                  onClick={() => handleDelete(q)}
+                  className="flex h-9 w-9 items-center justify-center rounded-card border-2 border-rust bg-black text-xs text-rust focus-visible:outline focus-visible:outline-2 focus-visible:outline-rust"
+                >
+                  🗑
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
 
 export default function Village() {
   const choice = useSyncExternalStore(
@@ -267,6 +434,8 @@ export default function Village() {
   const charName = choice?.name ?? "";
   const [muted, setMuted] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [addQuestOpen, setAddQuestOpen] = useState(false);
+const [quests, setQuests] = useState(mockQuests);
   const pct = Math.min(100, Math.round((c.totalXP / c.xpForNextLevel) * 100));
 
   // ESC closes the profile overlay.
@@ -340,6 +509,14 @@ export default function Village() {
               ★ Tier {c.villageTier}
             </span>
             <button
+  type="button"
+  aria-label="Add custom quest"
+  onClick={() => setAddQuestOpen(true)}
+  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-avatar border-2 border-coin-gold bg-black font-pixel text-sm text-xp-amber transition hover:bg-dusk focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-xp-amber active:scale-95"
+>
+  +
+</button>
+            <button
               type="button"
               aria-label="Toggle sound"
               aria-pressed={muted}
@@ -377,11 +554,19 @@ export default function Village() {
         </div>
       </div>
 
-      {profileOpen && (
+            {profileOpen && (
         <ProfileOverlay
           characterId={choice?.characterId}
           charName={charName}
           onClose={() => setProfileOpen(false)}
+        />
+      )}
+
+      {addQuestOpen && (
+        <AddQuestModal
+          quests={quests}
+          setQuests={setQuests}
+          onClose={() => setAddQuestOpen(false)}
         />
       )}
     </main>
