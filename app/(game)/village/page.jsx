@@ -578,31 +578,39 @@ const HOTSPOTS = [
   { key: "gym", name: "Training Ground", category: "Strength", top: 30, left: 75 },
   { key: "home", name: "Farm", category: "Discipline", top: 65, left: 15 },
   { key: "home", name: "Workshop", category: "Discipline", top: 65, left: 60 },
+  { key: "shop", name: "Shop", category: null, top: 42, left: 62 },
 ];
 
 function Hotspot({ spot }) {
   const router = useRouter();
-  const available = mockQuests.filter(
-    (q) => q.hotspot === spot.key && q.status === "available"
-  );
+  const isShop = spot.key === "shop";
+  const available = isShop
+    ? []
+    : mockQuests.filter((q) => q.hotspot === spot.key && q.status === "available");
   const count = available.length;
-  const targetId = available[0]?.id ?? mockQuests.find((q) => q.hotspot === spot.key)?.id;
+  const targetId = isShop
+    ? null
+    : available[0]?.id ?? mockQuests.find((q) => q.hotspot === spot.key)?.id;
 
   return (
     <motion.button
       type="button"
-      aria-label={`${spot.name} — ${spot.category} quests, ${count} available`}
+      aria-label={isShop ? "Shop — buy items" : `${spot.name} — ${spot.category} quests, ${count} available`}
       whileHover={{ scale: 1.15 }}
       whileTap={{ scale: 0.9 }}
       transition={{ duration: 0.25, ease: "easeInOut" }}
-      onClick={() => targetId && router.push(`/quest/${targetId}`)}
+      onClick={() => (isShop ? router.push("/shop") : targetId && router.push(`/quest/${targetId}`))}
       style={{ top: `${spot.top}%`, left: `${spot.left}%` }}
       className="group absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-avatar border-2 border-xp-amber bg-dusk shadow-[0_0_0_2px_black,0_0_10px_rgba(242,184,75,0.7)] transition hover:shadow-[0_0_0_2px_black,0_0_18px_rgba(242,184,75,0.95)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-xp-amber motion-reduce:transition-none animate-pulse hover:animate-none sm:h-10 sm:w-10 sm:border-[3px] md:h-12 md:w-12"
     >
-      {count > 0 && (
-        <span className="flex h-4 w-4 items-center justify-center rounded-avatar bg-xp-amber font-pixel text-[8px] text-black sm:h-5 sm:w-5 sm:text-[10px] md:h-6 md:w-6 md:text-[11px]">
-          {count}
-        </span>
+      {isShop ? (
+        <span className="text-xs sm:text-sm">🛒</span>
+      ) : (
+        count > 0 && (
+          <span className="flex h-4 w-4 items-center justify-center rounded-avatar bg-xp-amber font-pixel text-[8px] text-black sm:h-5 sm:w-5 sm:text-[10px] md:h-6 md:w-6 md:text-[11px]">
+            {count}
+          </span>
+        )
       )}
       <span className="pointer-events-none absolute -bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-black/90 px-2 py-0.5 font-pixel text-[9px] text-xp-amber opacity-0 transition group-hover:opacity-100">
         {spot.name}
