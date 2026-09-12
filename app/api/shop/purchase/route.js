@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/server/supabaseServer";
 import { createAdminClient } from "@/lib/server/supabaseAdmin";
+import { checkRateLimit } from "@/lib/server/rateLimit";
 
 // ============================================================
 // POST /api/shop/purchase
@@ -45,6 +46,17 @@ export async function POST(request) {
   }
 
   const admin = createAdminClient();
+
+  // Rate-limit check — 10 requests per 10-second window per user per route.
+  // Fails open: if the rate-limit check itself breaks, the request is allowed
+  // through so a broken limiter never blocks a legitimate user.
+  const rateLimitResult = await checkRateLimit(admin, user.id, "shop-purchase");
+  if (!rateLimitResult.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests. Please slow down." },
+      { status: 429 }
+    );
+  }
 
   // 1) Fetch the ShopItem.
   const { data: item, error: itemError } = await admin

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/server/supabaseServer";
 import { createAdminClient } from "@/lib/server/supabaseAdmin";
+import { checkRateLimit } from "@/lib/server/rateLimit";
 import { getLevelForTotalXp } from "@/lib/server/xpCurve";
 import { getVillageTier } from "@/lib/server/villageTier";
 import { computeStreakUpdate } from "@/lib/server/streak";
@@ -52,6 +53,17 @@ export async function POST(request, { params }) {
 
   // 2) Use the ADMIN client for all DB operations (service-role bypasses RLS).
   const admin = createAdminClient();
+
+  // 2a) Rate-limit check — 10 requests per 10-second window per user per route.
+  //     Fails open: if the rate-limit check itself breaks, the request is allowed
+  //     through so a broken limiter never blocks a legitimate user.
+  const rateLimitResult = await checkRateLimit(admin, user.id, "quest-complete");
+  if (!rateLimitResult.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests. Please slow down." },
+      { status: 429 }
+    );
+  }
 
   // 3) Look up the quest by ID. The ADMIN client can read any row, so we
   //    manually check that userId matches the authenticated user ourselves.
