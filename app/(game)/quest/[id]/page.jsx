@@ -24,7 +24,7 @@ const LOCKED = (bright) =>
   `${SHARED_BUTTON} cursor-not-allowed ${
     bright
       ? "border-discipline-sage bg-discipline-sage/30 text-discipline-sage"
-      : "border-discipline-sage/50 bg-discipline-sage/10 text-discipline-sage/80"
+      : "border-parchment/30 bg-parchment/10 text-parchment/50"
   }`;
 
 // The contract's description for NPC quests is already a full sentence ("The Librarian
@@ -248,9 +248,10 @@ export default function ActiveQuest() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleComplete}
-                  disabled={isSubmitting}
-                  className={`${SECONDARY} disabled:cursor-not-allowed disabled:opacity-60`}
+                  disabled
+                  aria-disabled="true"
+                  aria-label="Start the quest before marking it complete"
+                  className={LOCKED(false)}
                 >
                   ✓ MARK COMPLETE
                 </button>
