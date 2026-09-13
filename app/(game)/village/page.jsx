@@ -632,7 +632,12 @@ const villageImage = VILLAGE_IMAGES[tier];
         const res = await apiFetch("/api/quests");
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Failed to load quests");
-        if (!cancelled) setQuests(data.quests);
+        if (!cancelled) {
+          const fixed = data.quests.map((q) =>
+            q.hotspot ? q : { ...q, hotspot: CATEGORY_TO_HOTSPOT[q.category] }
+          );
+          setQuests(fixed);
+        }
       } catch (err) {
         if (!cancelled) setQuestsError(err.message);
       } finally {

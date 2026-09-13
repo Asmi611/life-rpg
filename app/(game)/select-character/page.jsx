@@ -8,7 +8,7 @@ import { supabase } from "@/lib/client/supabaseClient";
 // Phase 4 feature flag — flip to false once Supabase auth + POST /api/character
 // are confirmed live (see .env.local + team sync point). While true, "Start Your
 // Journey" behaves exactly like the Phase 2 mock (sessionStorage only, no network).
-const USE_MOCK_AUTH = true;
+const USE_MOCK_AUTH = false;
 
 // Style exception: this screen intentionally uses the retro pixel-art look from
 // docs/references/ (dark background, amber/gold frame, bright panel blue) — an

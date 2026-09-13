@@ -11,7 +11,7 @@ import { apiFetch } from "@/lib/client/apiFetch";
 // Phase 5 feature flag — flip to false once GET /api/quests, PATCH /api/quests/:id,
 // and POST /api/quests/:id/complete are confirmed live. While true, this screen
 // behaves exactly like the Phase 2 mock (local state only, no network calls).
-const USE_MOCK_AUTH = true;
+const USE_MOCK_AUTH = false;
 
 
 // Retro pixel quest screen — same intentional style exception (dark bg, gold pixel
@@ -30,6 +30,9 @@ const LOCKED = (bright) =>
 // The contract's description for NPC quests is already a full sentence ("The Librarian
 // wants you to read."), so only add the "[npc] wants you to" prefix when it's missing.
 function buildQuote(quest) {
+  if (!quest.description) {
+    return `\u201C${quest.title}\u201D`;
+  }
   const desc = quest.description.replace(/\.$/, "");
   if (!quest.npcName || desc.toLowerCase().includes(quest.npcName.toLowerCase())) {
     return `\u201C${desc}.\u201D`;
