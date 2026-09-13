@@ -1,9 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { mockQuests } from "@/lib/client/mockData";
+import RewardOverlay from "@/components/ui/RewardOverlay";
+import { useRequireAuth } from "@/lib/client/useRequireAuth";
+import { apiFetch } from "@/lib/client/apiFetch";
+
+// Phase 5 feature flag — flip to false once GET /api/quests, PATCH /api/quests/:id,
+// and POST /api/quests/:id/complete are confirmed live. While true, this screen
+// behaves exactly like the Phase 2 mock (local state only, no network calls).
+const USE_MOCK_AUTH = true;
 
 
 // Retro pixel quest screen — same intentional style exception (dark bg, gold pixel
@@ -30,17 +38,131 @@ function buildQuote(quest) {
 }
 
 export default function ActiveQuest() {
-  const { id } = useParams();
-  const quest = mockQuests.find((q) => q.id === id);
-  const [state, setState] = useState("NOT_STARTED");
+  useRequireAuth();
 
-  if (!quest) {
+  const { id } = useParams();
+  const router = useRouter();
+  const [reward, setReward] = useState(null); // { rewards, character } from complete response
+  const [quest, setQuest] = useState(() =>
+    USE_MOCK_AUTH ? mockQuests.find((q) => q.id === id) ?? null : null
+  );
+  const [loading, setLoading] = useState(!USE_MOCK_AUTH);
+  const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Map the contract's persisted status to this screen's three UI states.
+  const state =
+    quest?.status === "completed"
+      ? "COMPLETED"
+      : quest?.status === "accepted"
+        ? "STARTED"
+        : "NOT_STARTED";
+
+  useEffect(() => {
+    if (USE_MOCK_AUTH) return;
+    let cancelled = false;
+
+    async function loadQuest() {
+      setLoading(true);
+      setLoadError("");
+      try {
+        // No GET /api/quests/:id in the contract — fetch the list and find it.
+        const res = await apiFetch("/api/quests");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed to load quest");
+        const found = data.quests.find((q) => q.id === id);
+        if (!cancelled) setQuest(found ?? null);
+      } catch (err) {
+        if (!cancelled) setLoadError(err.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadQuest();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  async function handleStart() {
+    if (USE_MOCK_AUTH) {
+      setQuest((q) => ({ ...q, status: "accepted" }));
+      return;
+    }
+    setIsSubmitting(true);
+    setActionError("");
+    try {
+      const res = await apiFetch(`/api/quests/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "accepted" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to start quest");
+      setQuest((q) => ({ ...q, status: "accepted" }));
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function handleStop() {
+    // No "revert to available" endpoint in the contract — local-only, matches
+    // the Phase 2 mock's stop behavior.
+    setQuest((q) => ({ ...q, status: "available" }));
+  }
+
+  async function handleComplete() {
+    if (USE_MOCK_AUTH) {
+      setQuest((q) => ({ ...q, status: "completed" }));
+      // Mock reward preview so the overlay is testable before the backend flag flips.
+      setReward({
+        rewards: { xp: quest.rewardXP, coins: quest.rewardCoins, gems: quest.rewardGems },
+        character: {
+          level: 4,
+          totalXP: 1280 + quest.rewardXP,
+          xpForNextLevel: 1600,
+          leveledUp: false,
+          currentStreak: 3,
+          villageTier: 2,
+          villageTierChanged: false,
+        },
+      });
+      return;
+    }
+    setIsSubmitting(true);
+    setActionError("");
+    try {
+      const res = await apiFetch(`/api/quests/${id}/complete`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to complete quest");
+      setQuest((q) => ({ ...q, status: "completed" }));
+      setReward({ rewards: data.rewards, character: data.character });
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <main id="main-content" className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-black px-4 font-pixel text-parchment">
+        <p className="text-xs text-coin-gold">LOADING QUEST…</p>
+      </main>
+    );
+  }
+
+  if (loadError || !quest) {
     return (
       <main  id="main-content" className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-black px-4 font-pixel text-parchment">
         <div className="w-full max-w-96 rounded-card border-4 border-coin-gold bg-black p-6 text-center">
           <h1 className="text-lg text-xp-amber">QUEST NOT FOUND</h1>
           <p className="mt-2 text-xs text-parchment/70">
-            No quest with id &quot;{id}&quot; exists in the quest log.
+            {loadError || `No quest with id "${id}" exists in the quest log.`}
           </p>
           <Link
             href="/village"
@@ -56,7 +178,7 @@ export default function ActiveQuest() {
   const completed = state === "COMPLETED";
 
   return (
-       <main className="relative flex min-h-dvh flex-col items-center gap-2 overflow-hidden bg-black px-4 py-6 font-pixel text-parchment">
+       <main id="main-content" className="relative flex min-h-dvh flex-col items-center gap-2 overflow-hidden bg-black px-4 py-6 font-pixel text-parchment">
       <Link
         href="/village"
         aria-label="Back to village"
@@ -112,13 +234,20 @@ export default function ActiveQuest() {
               </>
             ) : state === "NOT_STARTED" ? (
               <>
-                <button type="button" onClick={() => setState("STARTED")} className={PRIMARY}>
-                  ▶ START
+                <button
+                  type="button"
+                  onClick={handleStart}
+                  disabled={isSubmitting}
+                  aria-busy={isSubmitting}
+                  className={`${PRIMARY} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  {isSubmitting ? "STARTING…" : "▶ START"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setState("COMPLETED")}
-                  className={SECONDARY}
+                  onClick={handleComplete}
+                  disabled={isSubmitting}
+                  className={`${SECONDARY} disabled:cursor-not-allowed disabled:opacity-60`}
                 >
                   ✓ MARK COMPLETE
                 </button>
@@ -127,21 +256,29 @@ export default function ActiveQuest() {
               <>
                 <button
                   type="button"
-                  onClick={() => setState("NOT_STARTED")}
-                  className={SECONDARY}
+                  onClick={handleStop}
+                  disabled={isSubmitting}
+                  className={`${SECONDARY} disabled:cursor-not-allowed disabled:opacity-60`}
                 >
                   ■ STOP QUEST
                 </button>
                 <button
                   type="button"
-                  onClick={() => setState("COMPLETED")}
-                  className={PRIMARY}
+                  onClick={handleComplete}
+                  disabled={isSubmitting}
+                  aria-busy={isSubmitting}
+                  className={`${PRIMARY} disabled:cursor-not-allowed disabled:opacity-60`}
                 >
-                  ✓ MARK COMPLETE
+                  {isSubmitting ? "COMPLETING…" : "✓ MARK COMPLETE"}
                 </button>
               </>
             )}
           </div>
+          {actionError && (
+            <p role="alert" className="text-center text-xs text-rust">
+              {actionError}
+            </p>
+          )}
         </div>
       </section>
 
@@ -152,6 +289,14 @@ export default function ActiveQuest() {
         <span className="whitespace-nowrap">© 199X RETRO QUEST CORP.</span>
         <span className="whitespace-nowrap"> · LIFE RPG</span>
       </footer>
+
+      {reward && (
+        <RewardOverlay
+          rewards={reward.rewards}
+          character={reward.character}
+          onDismiss={() => router.push("/village")}
+        />
+      )}
     </main>
   );
 }

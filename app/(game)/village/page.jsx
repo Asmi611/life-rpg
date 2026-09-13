@@ -4,8 +4,15 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { mockCharacter as c, mockQuests } from "@/lib/client/mockData";
+import { useRequireAuth } from "@/lib/client/useRequireAuth";
+import { apiFetch } from "@/lib/client/apiFetch";
+import { supabase } from "@/lib/client/supabaseClient";
+
+// Phase 5 feature flag — flip to false once GET /api/quests is confirmed live.
+// While true, hotspots and the quest list read from mockQuests exactly as before.
+const USE_MOCK_AUTH = false;
 
 // Retro pixel HUD — same intentional style exception as welcome/select-character
 // (dark bar, gold pixel borders, pixel-font labels). Data is mock only.
@@ -62,18 +69,30 @@ const RANKS = ["C", "C", "C", "B", "B", "A", "A", "S"];
 
 // Two-page "Adventurer Record" book overlay (docs/references/profile.PNG).
 // Mock-data driven; decorative strings mirror the reference's retro CRT framing.
-function ProfileOverlay({ characterId, charName, onClose }) {
+function ProfileOverlay({ characterId, charName, character = c, onClose }) {
+  const router = useRouter();
+
+  async function handleLogout() {
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      console.error("Logout failed:", error);
+      return;
+    }
+
+    router.push("/select-character");
+  }
   const meta = CHARACTERS[characterId] ?? CHARACTERS.wayfarer;
-  const rank = RANKS[Math.min(c.level, RANKS.length - 1)];
-  const stage = TIER_STAGES[Math.min(Math.max(c.villageTier, 1), TIER_STAGES.length) - 1];
-  const memId = `#${(String(c.id).replace(/\D/g, "") || "1").padStart(7, "0")}`;
-  const bp = (c.totalXP * 2).toLocaleString("en-US");
-  const xpPct = Math.min(100, Math.round((c.totalXP / c.xpForNextLevel) * 100));
+  const rank = RANKS[Math.min(character.level, RANKS.length - 1)];
+  const stage = TIER_STAGES[Math.min(Math.max(character.villageTier, 1), TIER_STAGES.length) - 1];
+  const memId = `#${(String(character.id ?? c.id).replace(/\D/g, "") || "1").padStart(7, "0")}`;
+  const bp = (character.totalXP * 2).toLocaleString("en-US");
+  const xpPct = Math.min(100, Math.round((character.totalXP / character.xpForNextLevel) * 100));
 
   const attributes = [
-    { label: "INTELLIGENCE (INT)", value: c.intelligence, bar: "bg-xp-amber" },
-    { label: "STRENGTH (STR)", value: c.strength, bar: "bg-rust" },
-    { label: "DISCIPLINE (DIS)", value: c.discipline, bar: "bg-sage" },
+    { label: "INTELLIGENCE (INT)", value: character.intelligence, bar: "bg-xp-amber" },
+    { label: "STRENGTH (STR)", value: character.strength, bar: "bg-rust" },
+    { label: "DISCIPLINE (DIS)", value: character.discipline, bar: "bg-sage" },
   ];
 
   return (
@@ -107,8 +126,8 @@ function ProfileOverlay({ characterId, charName, onClose }) {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 font-pixel text-[10px] text-coin-gold">
           <p>▚ LIFE RPG :: ADVENTURER RECORD // WORLD 01</p>
           <p className="flex items-center gap-3">
-            <span className="tabular-nums">◉ {c.coins.toLocaleString("en-US")}</span>
-            <span className="tabular-nums text-sky-300">◈ {c.gems}</span>
+            <span className="tabular-nums">◉ {character.coins.toLocaleString("en-US")}</span>
+            <span className="tabular-nums text-sky-300">◈ {character.gems}</span>
             <span className="hidden text-coin-gold/70 sm:inline">MEM ID: {memId}</span>
           </p>
         </div>
@@ -126,7 +145,7 @@ function ProfileOverlay({ characterId, charName, onClose }) {
                 <div className="mt-3 border border-coin-gold/40 bg-black p-2">
                   <Image
                     src={meta.portrait}
-                    alt={`${charName || c.name}'s full adventurer portrait`}
+                    alt={`${charName || character.name}'s full adventurer portrait`}
                     width={186}
                     height={232}
                     unoptimized
@@ -136,15 +155,15 @@ function ProfileOverlay({ characterId, charName, onClose }) {
                 </div>
                 <div className="mt-3 flex items-center justify-between font-pixel text-[10px]">
                   <span className="rounded-pill bg-dusk px-2 py-1 text-xp-amber tabular-nums">
-                    ◉ {c.coins}
+                    ◉ {character.coins}
                   </span>
-                  <span className="rounded-pill bg-dusk px-2 py-1 text-parchment">Lv. {c.level}</span>
+                  <span className="rounded-pill bg-dusk px-2 py-1 text-parchment">Lv. {character.level}</span>
                 </div>
               </div>
 
               <div className="mt-3 text-center">
                 <p className="font-pixel text-base text-xp-amber sm:text-lg">
-                  {(charName || c.name).toUpperCase()}
+                  {(charName || character.name).toUpperCase()}
                   <span aria-hidden="true" className="ml-2 text-coin-gold/70">✎</span>
                 </p>
                 <p className="mt-1 font-pixel text-[10px] text-coin-gold">CLASS: {meta.className}</p>
@@ -162,7 +181,7 @@ function ProfileOverlay({ characterId, charName, onClose }) {
               <div className="rounded-card border-2 border-coin-gold bg-dusk/50 p-3">
                 <div className="flex items-center justify-between">
                   <p className="font-pixel text-sm text-parchment">
-                    Level: <span className="text-xp-amber">{c.level}</span>
+                    Level: <span className="text-xp-amber">{character.level}</span>
                   </p>
                   <p className="font-pixel text-[10px] text-coin-gold/70 tabular-nums">ID: {memId}</p>
                 </div>
@@ -171,13 +190,13 @@ function ProfileOverlay({ characterId, charName, onClose }) {
                   aria-valuenow={xpPct}
                   aria-valuemin={0}
                   aria-valuemax={100}
-                  aria-label={`XP progress: ${c.totalXP} of ${c.xpForNextLevel}`}
+                  aria-label={`XP progress: ${character.totalXP} of ${character.xpForNextLevel}`}
                   className="mt-2 h-3 overflow-hidden rounded-avatar border border-coin-gold/60 bg-black"
                 >
                   <div className="h-full bg-xp-amber" style={{ width: `${xpPct}%` }} />
                 </div>
                 <p className="mt-1 text-right font-pixel text-[10px] text-coin-gold tabular-nums">
-                  {c.totalXP.toLocaleString("en-US")} / {c.xpForNextLevel.toLocaleString("en-US")} (XP)
+                  {character.totalXP.toLocaleString("en-US")} / {character.xpForNextLevel.toLocaleString("en-US")} (XP)
                 </p>
                 <div className="mt-2 flex justify-between font-pixel text-[9px] text-coin-gold/70">
                   <span>ARENA RANK: GOLD III</span>
@@ -189,7 +208,7 @@ function ProfileOverlay({ characterId, charName, onClose }) {
                 <div className="flex items-center justify-between">
                   <p className="font-pixel text-[10px] text-coin-gold">◈ CORE ATTRIBUTES</p>
                   <span className="bg-xp-amber px-2 py-0.5 font-pixel text-[9px] text-black">
-                    TIER {c.villageTier} READY
+                    TIER {character.villageTier} READY
                   </span>
                 </div>
                 <div className="mt-2 flex flex-col gap-2">
@@ -220,7 +239,7 @@ function ProfileOverlay({ characterId, charName, onClose }) {
                 <div className="rounded-card border-2 border-coin-gold bg-dusk/50 p-3">
                   <p className="font-pixel text-[9px] text-coin-gold">🔥 STREAK</p>
                   <p className="mt-1 font-pixel text-sm text-xp-amber tabular-nums">
-                    {c.currentStreak} DAYS
+                    {character.currentStreak} DAYS
                   </p>
                 </div>
                 <div className="rounded-card border-2 border-coin-gold bg-dusk/50 p-3">
@@ -230,14 +249,32 @@ function ProfileOverlay({ characterId, charName, onClose }) {
               </div>
 
               <div className="mt-3 rounded-card border-2 border-coin-gold bg-dusk/50 p-3">
-                <div className="flex items-center justify-between">
-                  <p className="font-pixel text-[10px] text-coin-gold">✦ PERSONAL MANIFESTO</p>
-                  <span aria-hidden="true" className="font-pixel text-[9px] text-coin-gold/70">✎ EDIT</span>
-                </div>
-                <p className="mt-2 border border-coin-gold/30 bg-black/40 px-3 py-2 text-sm italic leading-relaxed text-parchment">
-                  {meta.lore}
-                </p>
-              </div>
+  <div className="flex items-center justify-between">
+    <p className="font-pixel text-[10px] text-coin-gold">
+      ✦ PERSONAL MANIFESTO
+    </p>
+
+    <span
+      aria-hidden="true"
+      className="font-pixel text-[9px] text-coin-gold/70"
+    >
+      ✎ EDIT
+    </span>
+  </div>
+
+  <p className="mt-2 border border-coin-gold/30 bg-black/40 px-3 py-2 text-sm italic leading-relaxed text-parchment">
+    {meta.lore}
+  </p>
+
+  <button
+    type="button"
+    onClick={handleLogout}
+    className="mt-6 w-full border-2 border-red-700 bg-red-900/20 px-4 py-3 font-pixel text-sm text-red-400 transition hover:bg-red-900/40"
+  >
+    LOG OUT
+  </button>
+</div>
+              
 
               <div className="mt-auto flex items-center justify-between pt-4 font-pixel text-[10px] text-coin-gold/50">
                 <span>RECORD: BLR-4091-OK</span>
@@ -259,10 +296,22 @@ function ProfileOverlay({ characterId, charName, onClose }) {
 const CATEGORIES = ["Intelligence", "Strength", "Discipline"];
 const EMPTY_FORM = { title: "", description: "", category: "Intelligence" };
 
+// Custom quests aren't tied to a specific NPC building by the player, so we
+// auto-assign a hotspot from the chosen category — same buildings the real
+// NPC starter quests use, so a custom "Study" quest lands on the Academy
+// exactly like a real Intelligence quest would.
+const CATEGORY_TO_HOTSPOT = {
+  Intelligence: "academy",
+  Strength: "trainingGround",
+  Discipline: "farm",
+};
+
 function AddQuestModal({ quests, setQuests, onClose }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null); // quest pending delete confirmation
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -272,36 +321,80 @@ function AddQuestModal({ quests, setQuests, onClose }) {
 
   const customQuests = quests.filter((q) => q.source === "custom");
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     if (!form.title.trim()) {
       setError("Title is required");
       return;
     }
     setError("");
-    if (editingId) {
-      setQuests((prev) =>
-        prev.map((q) => (q.id === editingId ? { ...q, ...form, title: form.title.trim() } : q))
-      );
-    } else {
-      setQuests((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          title: form.title.trim(),
-          description: form.description.trim(),
-          category: form.category,
-          source: "custom",
-          status: "available",
-          rewardXP: 0,
-          rewardCoins: 0,
-          rewardGems: 0,
-        },
-        // TODO: swap to real POST /api/quests once backend is live
-      ]);
+
+    if (USE_MOCK_AUTH) {
+      if (editingId) {
+        setQuests((prev) =>
+          prev.map((q) => (q.id === editingId ? { ...q, ...form, title: form.title.trim() } : q))
+        );
+      } else {
+        setQuests((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            title: form.title.trim(),
+            description: form.description.trim(),
+            category: form.category,
+            hotspot: CATEGORY_TO_HOTSPOT[form.category],
+            source: "custom",
+            status: "available",
+            rewardXP: 0,
+            rewardCoins: 0,
+            rewardGems: 0,
+          },
+        ]);
+      }
+      setForm(EMPTY_FORM);
+      setEditingId(null);
+      return;
     }
-    setForm(EMPTY_FORM);
-    setEditingId(null);
+
+    setIsSubmitting(true);
+    try {
+      if (editingId) {
+        const res = await apiFetch(`/api/quests/${editingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: form.title.trim(),
+            description: form.description.trim(),
+            category: form.category,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed to update quest");
+        setQuests((prev) =>
+          prev.map((q) => (q.id === editingId ? { ...q, ...data } : q))
+        );
+      } else {
+        const res = await apiFetch("/api/quests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: form.title.trim(),
+            description: form.description.trim(),
+            category: form.category,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed to create quest");
+        const created = { ...data, hotspot: data.hotspot || CATEGORY_TO_HOTSPOT[form.category] };
+        setQuests((prev) => [...prev, created]);
+      }
+      setForm(EMPTY_FORM);
+      setEditingId(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function handleEdit(q) {
@@ -310,10 +403,29 @@ function AddQuestModal({ quests, setQuests, onClose }) {
     setError("");
   }
 
-  function handleDelete(q) {
-    if (window.confirm(`Delete "${q.title}"?`)) {
+  async function handleDelete(q) {
+    setConfirmDelete(q);
+  }
+
+  async function confirmDeleteNow() {
+    const q = confirmDelete;
+    setConfirmDelete(null);
+    if (!q) return;
+
+    if (USE_MOCK_AUTH) {
       setQuests((prev) => prev.filter((x) => x.id !== q.id));
-      // TODO: swap to real DELETE /api/quests/:id once backend is live
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`/api/quests/${q.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to delete quest");
+      }
+      setQuests((prev) => prev.filter((x) => x.id !== q.id));
+    } catch (err) {
+      setError(err.message);
     }
   }
 
@@ -376,9 +488,10 @@ function AddQuestModal({ quests, setQuests, onClose }) {
 
           <button
             type="submit"
-            className="min-h-11 rounded-card border-2 border-black bg-gradient-to-b from-xp-amber to-coin-gold px-4 py-3 text-xs uppercase text-black transition hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-xp-amber"
+            disabled={isSubmitting}
+            className="min-h-11 rounded-card border-2 border-black bg-gradient-to-b from-xp-amber to-coin-gold px-4 py-3 text-xs uppercase text-black transition hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-xp-amber disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {editingId ? "SAVE CHANGES" : "▶ ADD QUEST"}
+            {isSubmitting ? "SAVING…" : editingId ? "SAVE CHANGES" : "▶ ADD QUEST"}
           </button>
         </form>
 
@@ -420,11 +533,44 @@ function AddQuestModal({ quests, setQuests, onClose }) {
           ))}
         </ul>
       </div>
+
+      {confirmDelete && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="confirm-delete-title"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4"
+        >
+          <div className="w-full max-w-80 rounded-card border-4 border-rust bg-black p-4 text-center font-pixel shadow-[0_0_24px_rgba(185,92,74,0.4)]">
+            <p id="confirm-delete-title" className="text-sm text-parchment">
+              Delete &quot;{confirmDelete.title}&quot;?
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={confirmDeleteNow}
+                className="flex-1 rounded-card border-2 border-rust bg-rust/90 px-4 py-2 text-xs uppercase tracking-wider text-parchment transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-parchment"
+              >
+                DELETE
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(null)}
+                className="flex-1 rounded-card border-2 border-coin-gold bg-black px-4 py-2 text-xs uppercase tracking-wider text-xp-amber transition hover:bg-dusk focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-coin-gold"
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function Village() {
+  useRequireAuth();
+
   const choice = useSyncExternalStore(
     subscribeToCharacterChoice,
     readCharacterChoice,
@@ -433,13 +579,72 @@ export default function Village() {
   const meta = CHARACTERS[choice?.characterId] ?? CHARACTERS.wayfarer;
   const charName = choice?.name ?? "";
   const [muted, setMuted] = useState(false);
+  const [toast, setToast] = useState("");
+
+  function showToast(message) {
+    setToast(message);
+    window.setTimeout(() => setToast(""), 2500);
+  }
   const [profileOpen, setProfileOpen] = useState(false);
   const [addQuestOpen, setAddQuestOpen] = useState(false);
 const [quests, setQuests] = useState(mockQuests);
-  const pct = Math.min(100, Math.round((c.totalXP / c.xpForNextLevel) * 100));
-  const tier = Math.min(Math.max(c.villageTier, 1), 3);
-  const hotspots = HOTSPOTS_BY_TIER[tier];
-  const villageImage = VILLAGE_IMAGES[tier];
+  const [questsLoading, setQuestsLoading] = useState(!USE_MOCK_AUTH);
+  const [questsError, setQuestsError] = useState("");
+  const [character, setCharacter] = useState(c);
+const [characterLoading, setCharacterLoading] = useState(!USE_MOCK_AUTH);
+const prefersReducedMotion = useReducedMotion();
+
+const pct = Math.min(100, Math.round((character.totalXP / character.xpForNextLevel) * 100));
+const tier = Math.min(Math.max(character.villageTier, 1), 3);
+const hotspots = HOTSPOTS_BY_TIER[tier];
+const villageImage = VILLAGE_IMAGES[tier];
+
+  useEffect(() => {
+    if (USE_MOCK_AUTH) return;
+    let cancelled = false;
+
+    async function loadCharacter() {
+      try {
+        const res = await apiFetch("/api/character");
+        const data = await res.json();
+        if (res.ok && !cancelled) setCharacter(data);
+      } catch {
+        // network error — keep showing whatever we already had
+      } finally {
+        if (!cancelled) setCharacterLoading(false);
+      }
+    }
+
+    loadCharacter();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (USE_MOCK_AUTH) return;
+    let cancelled = false;
+
+    async function loadQuests() {
+      setQuestsLoading(true);
+      setQuestsError("");
+      try {
+        const res = await apiFetch("/api/quests");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed to load quests");
+        if (!cancelled) setQuests(data.quests);
+      } catch (err) {
+        if (!cancelled) setQuestsError(err.message);
+      } finally {
+        if (!cancelled) setQuestsLoading(false);
+      }
+    }
+
+    loadQuests();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ESC closes the profile overlay.
   useEffect(() => {
@@ -473,23 +678,29 @@ const [quests, setQuests] = useState(mockQuests);
                 className="h-full w-full object-cover"
               />
             </button>
-            <span className="shrink-0 font-pixel text-sm text-xp-amber">Lv. {c.level}</span>
+            <span className="shrink-0 font-pixel text-sm text-xp-amber">
+              Lv. {characterLoading ? "—" : character.level}
+            </span>
 
             <div className="min-w-0 flex-1">
               <p className="font-pixel text-xs text-coin-gold">XP PROGRESS</p>
               <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
                 <div
                   role="progressbar"
-                  aria-valuenow={pct}
+                  aria-valuenow={characterLoading ? 0 : pct}
                   aria-valuemin={0}
                   aria-valuemax={100}
-                  aria-label={`XP progress: ${c.totalXP} of ${c.xpForNextLevel}`}
+                  aria-label={
+                    characterLoading
+                      ? "XP progress loading"
+                      : `XP progress: ${character.totalXP} of ${character.xpForNextLevel}`
+                  }
                   className="h-3 min-w-16 flex-1 overflow-hidden rounded-avatar border border-coin-gold/60 bg-dusk"
                 >
-                  <div className="h-full bg-xp-amber" style={{ width: `${pct}%` }} />
+                  <div className="h-full bg-xp-amber" style={{ width: `${characterLoading ? 0 : pct}%` }} />
                 </div>
                 <span className="self-end whitespace-nowrap font-pixel text-xs text-parchment/80 tabular-nums sm:self-auto">
-                  {c.totalXP} / {c.xpForNextLevel} XP
+                  {characterLoading ? "— / —" : `${character.totalXP} / ${character.xpForNextLevel}`} XP
                 </span>
               </div>
             </div>
@@ -497,19 +708,19 @@ const [quests, setQuests] = useState(mockQuests);
 
           {/* Badges: sit below the priority row on small screens, inline from md up */}
           <div className="flex flex-wrap items-center justify-center gap-2 md:flex-nowrap md:justify-end md:shrink-0 md:gap-3">
-            <Pill icon="/art/icon-coin.png" iconAlt="Coins" value={c.coins} label={`Coins: ${c.coins}`} />
-            <Pill icon="/art/icon-gem.png" iconAlt="Gems" value={c.gems} label={`Gems: ${c.gems}`} />
+            <Pill icon="/art/icon-coin.png" iconAlt="Coins" value={characterLoading ? "—" : character.coins} label={`Coins: ${characterLoading ? "loading" : character.coins}`} />
+            <Pill icon="/art/icon-gem.png" iconAlt="Gems" value={characterLoading ? "—" : character.gems} label={`Gems: ${characterLoading ? "loading" : character.gems}`} />
             <Pill
               icon="/art/icon-streak.png"
               iconAlt="Day streak"
-              value={c.currentStreak}
-              label={`Streak: ${c.currentStreak} days`}
+              value={characterLoading ? "—" : character.currentStreak}
+              label={`Streak: ${characterLoading ? "loading" : `${character.currentStreak} days`}`}
             />
             <span
-              title={`Village tier: ${c.villageTier}`}
+              title={`Village tier: ${characterLoading ? "loading" : character.villageTier}`}
               className="rounded-pill bg-xp-amber px-2 py-1 font-pixel text-xs text-black"
             >
-              ★ Tier {c.villageTier}
+              ★ Tier {characterLoading ? "—" : character.villageTier}
             </span>
             <button
   type="button"
@@ -544,16 +755,38 @@ const [quests, setQuests] = useState(mockQuests);
             {/* Spacer for the fixed HUD + village scene with hotspots */}
       <div className="relative w-full overflow-x-hidden pt-24 md:pt-20">
         <div className="relative mx-auto aspect-[1376/768] w-full max-w-none px-0 sm:px-2">
-          <Image
-            src={villageImage.src}
-            alt={villageImage.alt}
-            fill
-            className="object-cover"
-            priority
-          />
-          {hotspots.map((spot) => (
-            <Hotspot key={spot.name} spot={spot} />
-          ))}
+          {characterLoading ? (
+            <div className="flex h-full w-full items-center justify-center bg-dusk">
+              <p className="font-pixel text-xs text-coin-gold">LOADING VILLAGE…</p>
+            </div>
+          ) : (
+            <>
+              <AnimatePresence initial={false}>
+  <motion.div
+    key={tier}
+    initial={{ opacity: prefersReducedMotion ? 1 : 0 }}
+    animate={{ opacity: 1 }}
+    exit={{ opacity: 0 }}
+    transition={{
+      duration: prefersReducedMotion ? 0 : 0.45,
+      ease: "easeInOut",
+    }}
+    className="absolute inset-0"
+  >
+    <Image
+      src={villageImage.src}
+      alt={villageImage.alt}
+      fill
+      className="object-cover"
+      priority
+    />
+  </motion.div>
+</AnimatePresence>
+              {hotspots.map((spot) => (
+                <Hotspot key={spot.name} spot={spot} quests={quests} showToast={showToast} />
+              ))}
+            </>
+          )}
         </div>
       </div>
 
@@ -561,6 +794,7 @@ const [quests, setQuests] = useState(mockQuests);
         <ProfileOverlay
           characterId={choice?.characterId}
           charName={charName}
+          character={character}
           onClose={() => setProfileOpen(false)}
         />
       )}
@@ -572,32 +806,41 @@ const [quests, setQuests] = useState(mockQuests);
           onClose={() => setAddQuestOpen(false)}
         />
       )}
+
+      {toast && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-1/2 z-[100] -translate-x-1/2 rounded-card border-2 border-coin-gold bg-black px-4 py-3 font-pixel text-xs text-xp-amber shadow-[0_0_16px_rgba(242,184,75,0.35)]"
+        >
+          {toast}
+        </div>
+      )}
     </main>
   );
 }
 const HOTSPOTS_BY_TIER = {
   1: [
-    { key: "library", name: "Academy", category: "Intelligence", top: 15, left: 10 },
+    { key: "academy", name: "Academy", category: "Intelligence", top: 15, left: 10 },
     { key: "library", name: "Library", category: "Intelligence", top: 10, left: 55 },
-    { key: "gym", name: "Training Ground", category: "Strength", top: 30, left: 75 },
-    { key: "home", name: "Farm", category: "Discipline", top: 65, left: 15 },
-    { key: "home", name: "Workshop", category: "Discipline", top: 65, left: 60 },
+    { key: "trainingGround", name: "Training Ground", category: "Strength", top: 30, left: 75 },
+    { key: "farm", name: "Farm", category: "Discipline", top: 65, left: 15 },
+    { key: "workshop", name: "Workshop", category: "Discipline", top: 65, left: 60 },
     { key: "shop", name: "Shop", category: null, top: 42, left: 62 },
   ],
   2: [
-    { key: "library", name: "Academy", category: "Intelligence", top: 15, left: 15 },
+    { key: "academy", name: "Academy", category: "Intelligence", top: 15, left: 15 },
     { key: "library", name: "Library", category: "Intelligence", top: 12, left: 55 },
-    { key: "gym", name: "Training Ground", category: "Strength", top: 30, left: 78 },
-    { key: "home", name: "Farm", category: "Discipline", top: 65, left: 15 },
-    { key: "home", name: "Workshop", category: "Discipline", top: 62, left: 58 },
+    { key: "trainingGround", name: "Training Ground", category: "Strength", top: 30, left: 78 },
+    { key: "farm", name: "Farm", category: "Discipline", top: 65, left: 15 },
+    { key: "workshop", name: "Workshop", category: "Discipline", top: 62, left: 58 },
     { key: "shop", name: "Shop", category: null, top: 40, left: 62 },
   ],
   3: [
-    { key: "library", name: "Academy", category: "Intelligence", top: 15, left: 22 },
+    { key: "academy", name: "Academy", category: "Intelligence", top: 15, left: 22 },
     { key: "library", name: "Library", category: "Intelligence", top: 40, left: 78 },
-    { key: "gym", name: "Training Ground", category: "Strength", top: 12, left: 78 },
-    { key: "home", name: "Farm", category: "Discipline", top: 60, left: 12 },
-    { key: "home", name: "Workshop", category: "Discipline", top: 68, left: 82 },
+    { key: "trainingGround", name: "Training Ground", category: "Strength", top: 12, left: 78 },
+    { key: "farm", name: "Farm", category: "Discipline", top: 60, left: 12 },
+    { key: "workshop", name: "Workshop", category: "Discipline", top: 68, left: 82 },
     { key: "shop", name: "Shop", category: null, top: 42, left: 62 },
   ],
 };
@@ -607,16 +850,16 @@ const VILLAGE_IMAGES = {
   3: { src: "/art/village-tier-3.webp", alt: "Walled town with expanded buildings and marketplace" },
 };
 
-function Hotspot({ spot }) {
+function Hotspot({ spot, quests, showToast }) {
   const router = useRouter();
   const isShop = spot.key === "shop";
   const available = isShop
     ? []
-    : mockQuests.filter((q) => q.hotspot === spot.key && q.status === "available");
+    : quests.filter((q) => q.hotspot === spot.key && q.status === "available");
   const count = available.length;
   const targetId = isShop
     ? null
-    : available[0]?.id ?? mockQuests.find((q) => q.hotspot === spot.key)?.id;
+    : available[0]?.id ?? quests.find((q) => q.hotspot === spot.key)?.id;
 
   return (
     <motion.button
@@ -625,7 +868,15 @@ function Hotspot({ spot }) {
       whileHover={{ scale: 1.15 }}
       whileTap={{ scale: 0.9 }}
       transition={{ duration: 0.25, ease: "easeInOut" }}
-      onClick={() => (isShop ? router.push("/shop") : targetId && router.push(`/quest/${targetId}`))}
+      onClick={() => {
+  if (isShop) {
+    router.push("/shop");
+  } else if (targetId) {
+    router.push(`/quest/${targetId}`);
+  } else {
+    showToast(`No quests here right now at ${spot.name}.`);
+  }
+}}
       style={{ top: `${spot.top}%`, left: `${spot.left}%` }}
       className="group absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-avatar border-2 border-xp-amber bg-dusk shadow-[0_0_0_2px_black,0_0_10px_rgba(242,184,75,0.7)] transition hover:shadow-[0_0_0_2px_black,0_0_18px_rgba(242,184,75,0.95)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-xp-amber motion-reduce:transition-none animate-pulse hover:animate-none sm:h-10 sm:w-10 sm:border-[3px] md:h-12 md:w-12"
     >

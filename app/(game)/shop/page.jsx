@@ -3,7 +3,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { mockCharacter, mockShopItems } from "@/lib/client/mockData";
+import { useRequireAuth } from "@/lib/client/useRequireAuth";
+import { apiFetch } from "@/lib/client/apiFetch";
+
 
 // Retro pixel shop — same intentional style exception as the other game screens
 // (dark bg, gold pixel borders). Mock data only; BUY is a visual no-op until
@@ -14,6 +16,13 @@ import { mockCharacter, mockShopItems } from "@/lib/client/mockData";
 const ICON_FILES = {
   "Golden Cape": "item-golden-cape.png",
   "Garden Fence": "item-garden-fence.png",
+  // Placeholder mappings — real backend items don't have dedicated art yet.
+  // Swap these for real files once the team has icons for each.
+  "Wizard Hat": "item-straw-hat.png",
+  "Cosmic Wings": "item-crystal-lantern.png",
+  "Stone Path": "item-stone-well.png",
+  "Flower Bed": "item-wind-chimes.png",
+  // Older mock names, kept in case they're still seeded anywhere.
   "Straw Hat": "item-straw-hat.png",
   "Crystal Lantern": "item-crystal-lantern.png",
   "Scholar's Spectacles": "item-spectacles.png",
@@ -71,20 +80,185 @@ function StatusBadge({ owned, equipped }) {
 }
 
 export default function Shop() {
-  const [selected, setSelected] = useState(null);
-  const modalRef = useRef(null);
-  const closeButtonRef = useRef(null);
-  const lastTriggerRef = useRef(null);
+  useRequireAuth();
 
+  const [items, setItems] = useState([]);
+const [coins, setCoins] = useState(0);
+const [gems, setGems] = useState(0);
+const [loading, setLoading] = useState(true);
+const [actionLoading, setActionLoading] = useState(false);
+const [error, setError] = useState("");
+const [toast, setToast] = useState("");
+
+const [selected, setSelected] = useState(null);
+
+const modalRef = useRef(null);
+const closeButtonRef = useRef(null);
+const lastTriggerRef = useRef(null);
+async function handlePurchase(item) {
+  try {
+    setActionLoading(true);
+    setError("");
+
+    const response = await apiFetch("/api/shop/purchase", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        itemId: item.id,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      showToast(data.error || "Purchase failed");
+      return;
+    }
+
+    setCoins(data.coins ?? coins);
+    setGems(data.gems ?? gems);
+
+    setItems((currentItems) =>
+      currentItems.map((currentItem) =>
+        currentItem.id === item.id
+          ? {
+              ...currentItem,
+              owned: true,
+              equipped: false,
+            }
+          : currentItem
+      )
+    );
+
+    setSelected((currentSelected) =>
+      currentSelected && currentSelected.id === item.id
+        ? {
+            ...currentSelected,
+            owned: true,
+            equipped: false,
+          }
+        : currentSelected
+    );
+
+    showToast(`${item.name} purchased!`);
+  } catch (err) {
+    console.error("Purchase failed:", err);
+    showToast("Purchase failed. Please try again.");
+  } finally {
+    setActionLoading(false);
+  }
+}
+async function handleEquip(item) {
+  try {
+    setActionLoading(true);
+
+    const response = await apiFetch("/api/shop/equip", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        itemId: item.id,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      showToast(data.error || "Failed to update equipped status");
+      return;
+    }
+
+    setItems((currentItems) =>
+      currentItems.map((currentItem) =>
+        currentItem.id === item.id
+          ? {
+              ...currentItem,
+              equipped: data.equipped,
+            }
+          : currentItem
+      )
+    );
+
+    setSelected((currentSelected) =>
+      currentSelected && currentSelected.id === item.id
+        ? {
+            ...currentSelected,
+            equipped: data.equipped,
+          }
+        : currentSelected
+    );
+
+    showToast(
+      data.equipped
+        ? `${item.name} equipped!`
+        : `${item.name} unequipped!`
+    );
+  } catch (err) {
+    console.error("Equip failed:", err);
+    showToast("Failed to update equipped status.");
+  } finally {
+    setActionLoading(false);
+  }
+}
   // Lock page scroll while the inspection modal is open.
   useEffect(() => {
-    if (!selected) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [selected]);
+  async function loadShop() {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await apiFetch("/api/shop/items", {
+  method: "GET",
+  cache: "no-store",
+});
+
+const data = await response.json();
+
+console.log("SHOP ITEMS FROM API:", data.items);
+
+if (!response.ok) {
+  throw new Error(data.error || "Failed to load shop");
+}
+
+      setItems(data.items || []);
+    } catch (err) {
+      console.error("Shop load failed:", err);
+      setError(err.message || "Failed to load shop");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  loadShop();
+}, []);
+useEffect(() => {
+  async function loadCharacter() {
+    try {
+      const response = await apiFetch("/api/character", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to load character");
+      }
+
+      const character = data.character || data;
+
+      setCoins(character.coins ?? 0);
+      setGems(character.gems ?? 0);
+    } catch (err) {
+      console.error("Character load failed:", err);
+    }
+  }
+
+  loadCharacter();
+}, []);
 
   useEffect(() => {
     if (!selected) return undefined;
@@ -122,6 +296,13 @@ export default function Shop() {
       lastTriggerRef.current?.focus();
     };
   }, [selected]);
+  function showToast(message) {
+  setToast(message);
+
+  window.setTimeout(() => {
+    setToast("");
+  }, 3000);
+}
 
   return (
     <main id="main-content" className="flex min-h-dvh flex-col items-center gap-3 overflow-hidden bg-black px-4 py-6 font-pixel text-parchment">
@@ -131,35 +312,38 @@ export default function Shop() {
           <h1 className="text-2xl leading-tight text-xp-amber [text-shadow:3px_3px_0_#7a4a12]">
             SHOP
           </h1>
-          <p className="mt-1 text-xs text-coin-gold">[ VILLAGE MARKET &amp; WARES\u00A0]</p>
+          <p className="mt-1 text-xs text-coin-gold">[ VILLAGE MARKET &amp; WARES ]</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span
-            title={`Coins: ${mockCharacter.coins}`}
+            title={`Coins: ${coins}`}
             className="flex items-center gap-1 rounded-pill border border-coin-gold/70 bg-black px-2 py-1 text-xs text-coin-gold tabular-nums"
           >
             <Image src="/art/icon-coin.png" alt="" width={16} height={16} className="h-4 w-4" />
-            {mockCharacter.coins}
+            {coins}
             <span className="sr-only">coins</span>
           </span>
           <span
-            title={`Gems: ${mockCharacter.gems}`}
+            title={`Gems: ${gems}`}
             className="flex items-center gap-1 rounded-pill border border-gem-violet bg-black px-2 py-1 text-xs text-gem-violet tabular-nums"
           >
             <Image src="/art/icon-gem.png" alt="" width={16} height={16} className="h-4 w-4" />
-            {mockCharacter.gems}
+            {gems}
             <span className="sr-only">gems</span>
           </span>
         </div>
       </div>
 
       {/* Item grid */}
-      <ul
-        aria-label="Shop items"
-        className="z-10 grid w-full max-w-140 grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
-      >
-        {mockShopItems.map((item) => (
-          <li key={item.id}>
+      {loading ? (
+        <p className="z-10 py-8 text-xs text-coin-gold">LOADING SHOP…</p>
+      ) : (
+        <ul
+          aria-label="Shop items"
+          className="z-10 grid w-full max-w-140 grid-cols-2 gap-3 sm:grid-cols-3"
+        >
+          {items.map((item) => (
+            <li key={item.id}>
             <button
               type="button"
               onClick={(e) => {
@@ -188,7 +372,8 @@ export default function Shop() {
             </button>
           </li>
         ))}
-      </ul>
+        </ul>
+      )}
 
       {/* Footer row */}
       <div className="z-10 flex w-full max-w-140 flex-col items-center justify-between gap-3 pb-2 sm:flex-row">
@@ -202,7 +387,7 @@ export default function Shop() {
           aria-hidden="true"
           className="text-xs text-coin-gold"
         >
-          INVENTORY: {mockShopItems.length} ITEMS ON DISPLAY
+          INVENTORY: {loading ? "—" : items.length} ITEMS ON DISPLAY
         </p>
       </div>
 
@@ -279,14 +464,27 @@ export default function Shop() {
                 {!selected.owned && (
                   <button
                     type="button"
-                    onClick={() => {
-                      // Phase 2 no-op — POST /api/shop/purchase arrives in a later phase.
-                    }}
+                   onClick={() => handlePurchase(selected)}
+                   disabled={actionLoading}
                     className="min-h-11 flex-1 rounded-card border-2 border-black bg-gradient-to-b from-xp-amber to-coin-gold px-6 py-3 text-xs font-bold uppercase tracking-wider text-black shadow-[0_0_0_2px_rgba(217,164,65,0.6)] transition hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-xp-amber active:scale-95"
                   >
                     ▶ BUY
                   </button>
                 )}
+                {selected.owned && selected.type === "cosmetic" && (
+  <button
+    type="button"
+    onClick={() => handleEquip(selected)}
+    disabled={actionLoading}
+    className="min-h-11 flex-1 rounded-card border-2 border-coin-gold bg-black px-6 py-3 text-xs font-bold uppercase tracking-wider text-xp-amber transition hover:bg-dusk focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-coin-gold active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+  >
+    {actionLoading
+      ? "PROCESSING..."
+      : selected.equipped
+        ? "UNEQUIP"
+        : "EQUIP"}
+  </button>
+)}
                 <button
                   ref={closeButtonRef}
                   type="button"
@@ -300,6 +498,14 @@ export default function Shop() {
           </div>
         </div>
       )}
+      {toast && (
+  <div
+    role="status"
+    className="fixed bottom-6 left-1/2 z-[100] -translate-x-1/2 rounded-card border-2 border-coin-gold bg-black px-4 py-3 text-xs text-xp-amber shadow-[0_0_16px_rgba(242,184,75,0.35)]"
+  >
+    {toast}
+  </div>
+)}
     </main>
   );
 }

@@ -1,8 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { supabase } from "@/lib/client/supabaseClient";
+
+// Phase 4 feature flag — flip to false once Supabase auth + POST /api/character
+// are confirmed live (see .env.local + team sync point). While true, "Start Your
+// Journey" behaves exactly like the Phase 2 mock (sessionStorage only, no network).
+const USE_MOCK_AUTH = true;
 
 // Style exception: this screen intentionally uses the retro pixel-art look from
 // docs/references/ (dark background, amber/gold frame, bright panel blue) — an
@@ -24,10 +30,16 @@ const CHARACTERS = [
 
 export default function SelectCharacter() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sessionExpired = searchParams.get("sessionExpired") === "1";
   const [characterIndex, setCharacterIndex] = useState(0);
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [confirmed, setConfirmed] = useState(null); // { name, className } on PROCEED
   const [showModal, setShowModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authError, setAuthError] = useState("");
   const modalRef = useRef(null);
   const proceedButtonRef = useRef(null);
   const startJourneyButtonRef = useRef(null);
@@ -36,6 +48,8 @@ export default function SelectCharacter() {
   const otherCharacter = CHARACTERS[(characterIndex + 1) % CHARACTERS.length];
   const trimmedName = name.trim();
   const hasName = trimmedName.length > 0;
+  const hasCredentials = USE_MOCK_AUTH || (email.trim().length > 0 && password.length >= 6);
+  const canStart = hasName && hasCredentials && !isSubmitting;
   const cardTitle = hasName ? trimmedName.toUpperCase() : "NO NAME";
 
   function toggleCharacter() {
@@ -43,25 +57,115 @@ export default function SelectCharacter() {
   }
 
   function openModal() {
-    if (!hasName || showModal) return;
+    if (!canStart || showModal) return;
+    setAuthError("");
     setShowModal(true);
   }
 
-  function handleProceed() {
-    // Phase 2 mock: keep the choice in local state only. Later phase maps this to
-    // POST /api/character's { name, gender } body — no API call invented here.
-    setConfirmed({ name: trimmedName, className: character.className });
-    // Persist the choice for the next screen (village HUD reads the portrait from here).
-    try {
-      window.sessionStorage.setItem(
-        "characterChoice",
-        JSON.stringify({ characterId: character.id, name: trimmedName })
-      );
-    } catch {
-      // storage unavailable — village falls back to the roamer portrait
+  async function handleProceed() {
+    if (USE_MOCK_AUTH) {
+      // Phase 2 mock: keep the choice in local state only.
+      setConfirmed({ name: trimmedName, className: character.className });
+      try {
+        window.sessionStorage.setItem(
+          "characterChoice",
+          JSON.stringify({ characterId: character.id, name: trimmedName })
+        );
+      } catch {
+        // storage unavailable — village falls back to the roamer portrait
+      }
+      setShowModal(false);
+      router.push("/village");
+      return;
     }
-    setShowModal(false);
-    router.push("/village");
+
+    setIsSubmitting(true);
+    setAuthError("");
+
+    const gender = character.id === "mage-scholar" ? "female" : "male"; // TODO: replace with a real gender field if the design adds one
+
+    try {
+      let userIsSignedIn = false;
+
+      const { error: signUpError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+      });
+
+      if (signUpError) {
+        const alreadyRegistered = /already registered|already been registered/i.test(
+          signUpError.message
+        );
+        if (!alreadyRegistered) {
+          setAuthError(signUpError.message);
+          setIsSubmitting(false);
+          return;
+        }
+
+        // Returning player on this device/browser — try signing them in
+        // with the same credentials instead of failing outright.
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (signInError) {
+          setAuthError(
+            "This email is already registered. If that's you, enter the matching password to continue."
+          );
+          setIsSubmitting(false);
+          return;
+        }
+        userIsSignedIn = true;
+      }
+
+      // If they just signed in (not a fresh signup), they may already have a
+      // character — skip creation and go straight to /village if so.
+      if (userIsSignedIn) {
+        const existingRes = await fetch("/api/character");
+        if (existingRes.ok) {
+          try {
+            window.sessionStorage.setItem(
+              "characterChoice",
+              JSON.stringify({ characterId: character.id, name: trimmedName })
+            );
+          } catch {
+            // storage unavailable — village falls back to the roamer portrait
+          }
+          setShowModal(false);
+          router.push("/village");
+          return;
+        }
+        // 404 here means signed-in but no character yet — fall through and create one.
+      }
+
+      const res = await fetch("/api/character", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmedName, gender }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAuthError(data.error ?? "Something went wrong creating your character.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      try {
+        window.sessionStorage.setItem(
+          "characterChoice",
+          JSON.stringify({ characterId: character.id, name: trimmedName })
+        );
+      } catch {
+        // storage unavailable — village falls back to the roamer portrait
+      }
+      setConfirmed({ name: trimmedName, className: character.className });
+      setShowModal(false);
+      router.push("/village");
+    } catch {
+      setAuthError("Network error — check your connection and try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   useEffect(() => {
@@ -72,6 +176,7 @@ export default function SelectCharacter() {
 
     function onKeyDown(event) {
       if (event.key === "Escape") {
+        if (isSubmitting) return;
         setShowModal(false);
         return;
       }
@@ -100,7 +205,7 @@ export default function SelectCharacter() {
       // Return focus to the trigger button once the modal closes.
       startJourneyButtonRef.current?.focus();
     };
-  }, [showModal]);
+  }, [showModal, isSubmitting]);
 
   return (
     <main id="main-content" className="relative flex min-h-dvh flex-col items-center gap-3 overflow-hidden bg-black px-4 pt-6 text-white font-pixel">
@@ -130,6 +235,15 @@ export default function SelectCharacter() {
           ~ 1P PRESS START ~
         </p>
       </header>
+
+      {sessionExpired && (
+        <p
+          role="alert"
+          className="z-10 rounded-pill border-2 border-rust bg-rust/20 px-4 py-2 text-center text-xs text-rust"
+        >
+          Your session expired — please log in again.
+        </p>
+      )}
 
       <div className="z-10 my-auto flex w-full flex-col items-center gap-3 sm:gap-4">
       {/* Character card */}
@@ -209,14 +323,47 @@ export default function SelectCharacter() {
         </div>
       </div>
 
+      {!USE_MOCK_AUTH && (
+        <div className="z-10 flex w-full max-w-72 flex-col gap-2 sm:max-w-96 md:max-w-112">
+          <label htmlFor="character-email" className="text-center text-xs text-coin-gold">
+            [ EMAIL ]
+          </label>
+          <input
+            id="character-email"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
+            placeholder="you@example.com"
+            className="min-h-11 rounded-card border-2 border-coin-gold bg-black px-3 py-2 text-sm text-parchment placeholder:text-dusk/70 focus-visible:outline-none"
+          />
+          <label htmlFor="character-password" className="text-center text-xs text-coin-gold">
+            [ PASSWORD ]
+          </label>
+          <input
+            id="character-password"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="new-password"
+            placeholder="At least 6 characters"
+            className="min-h-11 rounded-card border-2 border-coin-gold bg-black px-3 py-2 text-sm text-parchment placeholder:text-dusk/70 focus-visible:outline-none"
+          />
+          {authError && (
+            <p role="alert" className="text-center text-xs text-rust">
+              {authError}
+            </p>
+          )}
+        </div>
+      )}
       <button
         ref={startJourneyButtonRef}
         type="button"
         onClick={openModal}
-        disabled={!hasName}
-        aria-disabled={!hasName}
+        disabled={!canStart}
+        aria-disabled={!canStart}
         className={`z-10 mt-1 w-full max-w-72 whitespace-nowrap rounded-pill border-2 px-4 py-3 text-xs tracking-wider transition sm:max-w-96 md:max-w-112 ${
-          hasName
+          canStart
             ? "border-coin-gold bg-dusk text-xp-amber hover:bg-dusk/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-coin-gold active:scale-95"
             : "cursor-not-allowed border-coin-gold/30 bg-dusk/40 text-coin-gold/30"
         }`}
@@ -292,14 +439,17 @@ export default function SelectCharacter() {
                   ref={proceedButtonRef}
                   type="button"
                   onClick={handleProceed}
-                  className="flex-1 rounded-pill border-2 border-coin-gold bg-xp-amber px-6 py-3 text-sm text-dusk transition hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-parchment active:scale-95"
+                  disabled={isSubmitting}
+                  aria-busy={isSubmitting}
+                  className="flex-1 rounded-pill border-2 border-coin-gold bg-xp-amber px-6 py-3 text-sm text-dusk transition hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-parchment active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  PROCEED ▶
+                  {isSubmitting ? "CREATING…" : "PROCEED ▶"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="flex-1 rounded-pill border-2 border-coin-gold/60 bg-black px-6 py-3 text-sm text-coin-gold transition hover:bg-dusk/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-coin-gold active:scale-95"
+                  disabled={isSubmitting}
+                  className="flex-1 rounded-pill border-2 border-coin-gold/60 bg-black px-6 py-3 text-sm text-coin-gold transition hover:bg-dusk/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-coin-gold active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   [ ESC ] CANCEL
                 </button>
