@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/client/supabaseClient";
 
 // Phase 4 feature flag — flip to false once Supabase auth + POST /api/character
@@ -28,7 +28,7 @@ const CHARACTERS = [
   },
 ];
 
-export default function SelectCharacter() {
+function SelectCharacterInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionExpired = searchParams.get("sessionExpired") === "1";
@@ -466,5 +466,13 @@ export default function SelectCharacter() {
           : ""}
       </p>
     </main>
+  );
+}
+
+export default function SelectCharacter() {
+  return (
+    <Suspense fallback={null}>
+      <SelectCharacterInner />
+    </Suspense>
   );
 }
