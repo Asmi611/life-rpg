@@ -1,0 +1,18 @@
+
+> life-rpg@0.1.0 dev
+> next dev
+
+▲ Next.js 16.3.5 (Turbopack)
+- Local:         http://localhost:61728
+- Network:       http://192.168.0.12:61728
+✓ Ready in 1112ms
+✓ Running next.config.mjs took 48ms
+
+ GET /village 200 in 538ms (next.js: 315ms, application-code: 223ms)
+ GET /village 200 in 74ms (next.js: 8ms, application-code: 66ms)
+ GET /village 200 in 96ms (next.js: 11ms, application-code: 85ms)
+ GET /village 200 in 117ms (next.js: 31ms, application-code: 86ms)
+ GET /village 200 in 67ms (next.js: 8ms, application-code: 58ms)
+ GET /village 200 in 57ms (next.js: 8ms, application-code: 50ms)
+ GET /village 200 in 64ms (next.js: 11ms, application-code: 53ms)
+[?25h
